@@ -33,7 +33,7 @@ import static org.apache.dubbo.rpc.cluster.Constants.WARMUP_KEY;
 import static org.apache.dubbo.rpc.cluster.Constants.WEIGHT_KEY;
 
 /**
- * AbstractLoadBalance
+ * AbstractLoadBalance ：https://blog.csdn.net/donaldson/article/details/109302540
  */
 public abstract class AbstractLoadBalance implements LoadBalance {
     /**
@@ -46,7 +46,8 @@ public abstract class AbstractLoadBalance implements LoadBalance {
      * @return weight which takes warmup into account
      */
     static int calculateWarmupWeight(int uptime, int warmup, int weight) {
-        int ww = (int) ( uptime / ((float) warmup / weight));
+        //权值计算方式：服务器启动时间/(服务器预热需要的时间/初始权重)  让刚开始的服务可以缓缓
+        int ww = (int) (uptime / ((float) warmup / weight));
         return ww < 1 ? 1 : (Math.min(ww, weight));
     }
 
@@ -65,7 +66,7 @@ public abstract class AbstractLoadBalance implements LoadBalance {
 
 
     /**
-     * Get the weight of the invoker's invocation which takes warmup time into account
+     * Get the weight of the invoker(调用者)'s invocation which takes warmup time into account
      * if the uptime is within the warmup time, the weight will be reduce proportionally
      *
      * @param invoker    the invoker
@@ -75,25 +76,31 @@ public abstract class AbstractLoadBalance implements LoadBalance {
     int getWeight(Invoker<?> invoker, Invocation invocation) {
         int weight;
         URL url = invoker.getUrl();
-        // Multiple registry scenario, load balance among multiple registries.
+        // Multiple registry scenario, load balance among multiple registries. 注册中心不允许预热
         if (REGISTRY_SERVICE_REFERENCE_PATH.equals(url.getServiceInterface())) {
             weight = url.getParameter(REGISTRY_KEY + "." + WEIGHT_KEY, DEFAULT_WEIGHT);
         } else {
             weight = url.getMethodParameter(invocation.getMethodName(), WEIGHT_KEY, DEFAULT_WEIGHT);
             if (weight > 0) {
+                //获取服务提供者启动的时间戳
                 long timestamp = invoker.getUrl().getParameter(TIMESTAMP_KEY, 0L);
                 if (timestamp > 0L) {
+                    //获取启动时长
                     long uptime = System.currentTimeMillis() - timestamp;
+                    //当前时间小于服务提供者启动时间，直接给一个最小权重1
                     if (uptime < 0) {
                         return 1;
                     }
                     int warmup = invoker.getUrl().getParameter(WARMUP_KEY, DEFAULT_WARMUP);
+                    // 如果小于预热时间，计算权重
                     if (uptime > 0 && uptime < warmup) {
-                        weight = calculateWarmupWeight((int)uptime, warmup, weight);
+                        weight = calculateWarmupWeight((int) uptime, warmup, weight);
                     }
                 }
             }
         }
+
+        //获取权值，和0比较取得最大值，避免出现负值
         return Math.max(weight, 0);
     }
 }
